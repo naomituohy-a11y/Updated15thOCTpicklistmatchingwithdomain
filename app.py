@@ -2,6 +2,7 @@ import gradio as gr
 import pandas as pd
 from rapidfuzz import fuzz, process
 
+
 # -------------------------------
 # 🔹 Helper functions
 # -------------------------------
@@ -12,6 +13,7 @@ def clean_text(text):
         return ""
     return str(text).strip().lower()
 
+
 def fuzzy_match(company_name, reference_list, threshold=85):
     """Perform fuzzy matching against a reference list"""
     if not company_name or not reference_list:
@@ -19,10 +21,11 @@ def fuzzy_match(company_name, reference_list, threshold=85):
     match, score, _ = process.extractOne(company_name, reference_list, scorer=fuzz.token_sort_ratio)
     return match if score >= threshold else ""
 
+
 def process_files(tal_file, master_file, tal_column, master_column, threshold):
     """Process TAL vs Master to find matches"""
     try:
-        # Load data
+        # Load files
         tal_df = pd.read_excel(tal_file) if tal_file.name.endswith(".xlsx") else pd.read_csv(tal_file)
         master_df = pd.read_excel(master_file) if master_file.name.endswith(".xlsx") else pd.read_csv(master_file)
 
@@ -30,19 +33,14 @@ def process_files(tal_file, master_file, tal_column, master_column, threshold):
         tal_df[tal_column] = tal_df[tal_column].apply(clean_text)
         master_df[master_column] = master_df[master_column].apply(clean_text)
 
-        # Prepare list
+        # Prepare master list
         master_names = master_df[master_column].dropna().unique().tolist()
 
         # Perform matching
-        matches = []
-        for name in tal_df[tal_column]:
-            match = fuzzy_match(name, master_names, threshold)
-            matches.append(match)
-        
-        # Add result column
+        matches = [fuzzy_match(name, master_names, threshold) for name in tal_df[tal_column]]
         tal_df["Matched Company"] = matches
 
-        # Merge matched rows
+        # Merge preview
         merged_df = pd.merge(
             tal_df,
             master_df,
@@ -52,7 +50,7 @@ def process_files(tal_file, master_file, tal_column, master_column, threshold):
             suffixes=("_TAL", "_MASTER")
         )
 
-        return merged_df.head(50)  # preview first 50 rows for display
+        return merged_df.head(50)
     except Exception as e:
         return f"❌ Error: {str(e)}"
 
@@ -63,43 +61,39 @@ def process_files(tal_file, master_file, tal_column, master_column, threshold):
 
 with gr.Blocks(title="TAL vs Master Fuzzy Matcher") as demo:
     gr.Markdown("## 🔍 TAL vs Master Matching Tool")
-    gr.Markdown("Upload your TAL and Master files to find company name matches (fuzzy logic).")
+    gr.Markdown("Upload your TAL and Master files to find company name matches using fuzzy logic.")
 
     with gr.Row():
         tal_file = gr.File(label="📄 Upload TAL File (.csv or .xlsx)")
         master_file = gr.File(label="📄 Upload Master File (.csv or .xlsx)")
 
     with gr.Row():
-        tal_column = gr.Textbox(label="TAL Column Name (e.g., 'Company')", placeholder="Company")
-        master_column = gr.Textbox(label="Master Column Name (e.g., 'Company Name')", placeholder="Company Name")
+        tal_column = gr.Textbox(label="TAL Column Name", placeholder="Company")
+        master_column = gr.Textbox(label="Master Column Name", placeholder="Company Name")
         threshold = gr.Slider(70, 100, value=85, step=1, label="Fuzzy Match Threshold (%)")
 
     run_button = gr.Button("🚀 Run Matching")
-
-    output = gr.Dataframe(
-        label="Matched Results (Preview)",
-        interactive=False
-    )
+    output = gr.Dataframe(label="Matched Results (Preview)", interactive=False)
 
     run_button.click(
         fn=process_files,
         inputs=[tal_file, master_file, tal_column, master_column, threshold],
-        outputs=output,
-        concurrency_limit=1
+        outputs=output
     )
 
     gr.Markdown("---")
-    gr.Markdown("Built with ❤️ for TAL & Master data alignment.")
+    gr.Markdown("✅ Built for TAL ↔ Master data alignment")
 
 
 # -------------------------------
-# 🔹 App Launcher for Railway
+# 🔹 Correct Railway launch
 # -------------------------------
 if __name__ == "__main__":
     import os
-
     port = int(os.environ.get("PORT", 7860))
 
+    # Important: queue() + prevent_thread_lock keeps process alive
+    demo.queue(concurrency_count=3)
     demo.launch(
         server_name="0.0.0.0",
         server_port=port,
