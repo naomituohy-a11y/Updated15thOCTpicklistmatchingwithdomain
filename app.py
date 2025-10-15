@@ -86,19 +86,23 @@ with gr.Blocks(title="TAL vs Master Fuzzy Matcher") as demo:
 
 
 # -------------------------------
-# 🔹 Correct Railway launch
+# 🔹 Correct Railway launch (final fix)
 # -------------------------------
 if __name__ == "__main__":
     import os
     port = int(os.environ.get("PORT", 7860))
 
-    # Important: queue() + prevent_thread_lock keeps process alive
-    demo.queue(concurrency_count=3)
+    # ✅ Fixed: no concurrency_count, uses max_threads instead
+    demo.queue()  # enables task queueing
     demo.launch(
         server_name="0.0.0.0",
         server_port=port,
         share=False,
         show_api=False,
         quiet=False,
-        prevent_thread_lock=True
+        prevent_thread_lock=True,
+        max_threads=10  # <— replaces concurrency_count
     )
+
+    print("✅ App launched successfully on Railway!")
+
