@@ -105,4 +105,8 @@ if __name__ == "__main__":
     )
 
     print("✅ App launched successfully on Railway!")
+import time
+while True:
+    print("✅ Health check — app still running...")
+    time.sleep(60)
 
