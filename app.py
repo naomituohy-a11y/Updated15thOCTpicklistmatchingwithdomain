@@ -1,112 +1,54 @@
 import gradio as gr
 import pandas as pd
 from rapidfuzz import fuzz, process
-
-
-# -------------------------------
-# 🔹 Helper functions
-# -------------------------------
-
-def clean_text(text):
-    """Basic text cleaning for matching"""
-    if pd.isna(text):
-        return ""
-    return str(text).strip().lower()
-
-
-def fuzzy_match(company_name, reference_list, threshold=85):
-    """Perform fuzzy matching against a reference list"""
-    if not company_name or not reference_list:
-        return ""
-    match, score, _ = process.extractOne(company_name, reference_list, scorer=fuzz.token_sort_ratio)
-    return match if score >= threshold else ""
-
-
-def process_files(tal_file, master_file, tal_column, master_column, threshold):
-    """Process TAL vs Master to find matches"""
-    try:
-        # Load files
-        tal_df = pd.read_excel(tal_file) if tal_file.name.endswith(".xlsx") else pd.read_csv(tal_file)
-        master_df = pd.read_excel(master_file) if master_file.name.endswith(".xlsx") else pd.read_csv(master_file)
-
-        # Clean data
-        tal_df[tal_column] = tal_df[tal_column].apply(clean_text)
-        master_df[master_column] = master_df[master_column].apply(clean_text)
-
-        # Prepare master list
-        master_names = master_df[master_column].dropna().unique().tolist()
-
-        # Perform matching
-        matches = [fuzzy_match(name, master_names, threshold) for name in tal_df[tal_column]]
-        tal_df["Matched Company"] = matches
-
-        # Merge preview
-        merged_df = pd.merge(
-            tal_df,
-            master_df,
-            left_on="Matched Company",
-            right_on=master_column,
-            how="left",
-            suffixes=("_TAL", "_MASTER")
-        )
-
-        return merged_df.head(50)
-    except Exception as e:
-        return f"❌ Error: {str(e)}"
-
-
-# -------------------------------
-# 🔹 Gradio UI
-# -------------------------------
-
-with gr.Blocks(title="TAL vs Master Fuzzy Matcher") as demo:
-    gr.Markdown("## 🔍 TAL vs Master Matching Tool")
-    gr.Markdown("Upload your TAL and Master files to find company name matches using fuzzy logic.")
-
-    with gr.Row():
-        tal_file = gr.File(label="📄 Upload TAL File (.csv or .xlsx)")
-        master_file = gr.File(label="📄 Upload Master File (.csv or .xlsx)")
-
-    with gr.Row():
-        tal_column = gr.Textbox(label="TAL Column Name", placeholder="Company")
-        master_column = gr.Textbox(label="Master Column Name", placeholder="Company Name")
-        threshold = gr.Slider(70, 100, value=85, step=1, label="Fuzzy Match Threshold (%)")
-
-    run_button = gr.Button("🚀 Run Matching")
-    output = gr.Dataframe(label="Matched Results (Preview)", interactive=False)
-
-    run_button.click(
-        fn=process_files,
-        inputs=[tal_file, master_file, tal_column, master_column, threshold],
-        outputs=output
-    )
-
-    gr.Markdown("---")
-    gr.Markdown("✅ Built for TAL ↔ Master data alignment")
-
-
-# -------------------------------
-# 🔹 Correct Railway launch (final fix)
-# -------------------------------
-if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 7860))
-
-    # ✅ Fixed: no concurrency_count, uses max_threads instead
-    demo.queue()  # enables task queueing
-    demo.launch(
-        server_name="0.0.0.0",
-        server_port=port,
-        share=False,
-        show_api=False,
-        quiet=False,
-        prevent_thread_lock=True,
-        max_threads=10  # <— replaces concurrency_count
-    )
-
-    print("✅ App launched successfully on Railway!")
 import time
-while True:
-    print("✅ Health check — app still running...")
-    time.sleep(60)
 
+def match_domains(file1, file2, threshold):
+    try:
+        df1 = pd.read_excel(file1) if file1.name.endswith(".xlsx") else pd.read_csv(file1)
+        df2 = pd.read_excel(file2) if file2.name.endswith(".xlsx") else pd.read_csv(file2)
+    except Exception as e:
+        return f"❌ Error reading files: {e}"
+
+    col1 = df1.columns[0]
+    col2 = df2.columns[0]
+    matches = []
+
+    for name in df1[col1].dropna().astype(str):
+        best = process.extractOne(
+            name, df2[col2].dropna().astype(str), scorer=fuzz.token_sort_ratio
+        )
+        if best and best[1] >= threshold:
+            matches.append((name, best[0], best[1]))
+
+    if not matches:
+        return "No matches found."
+
+    result_df = pd.DataFrame(matches, columns=["File1 Name", "Best Match", "Match %"])
+    out_path = "/tmp/match_results.xlsx"
+    result_df.to_excel(out_path, index=False)
+    return out_path
+
+with gr.Blocks(title="Domain/Company Matcher") as demo:
+    gr.Markdown("### 🔍 Upload two files to compare domains or company names")
+
+    file1 = gr.File(label="Upload First File")
+    file2 = gr.File(label="Upload Second File")
+    threshold = gr.Slider(0, 100, value=90, step=1, label="Match Threshold (%)")
+
+    output = gr.File(label="Download Matched Results")
+    run_btn = gr.Button("Run Matching")
+
+    run_btn.click(
+        fn=match_domains,
+        inputs=[file1, file2, threshold],
+        outputs=output,
+        concurrency_limit=3
+    )
+
+demo.launch(server_name="0.0.0.0", server_port=8080, share=False)
+
+# Keep the container alive
+while True:
+    print("✅ Health check: app is running")
+    time.sleep(60)
